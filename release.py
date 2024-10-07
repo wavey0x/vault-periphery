@@ -3,6 +3,9 @@ import time
 import json
 from web3 import Web3
 import subprocess
+from solcx import compile_source, install_solc, set_solc_version, get_solc_version_pragma
+import vyper
+import re
 
 
 # Initialize web3 (assuming you are connecting to a local node)
@@ -31,8 +34,6 @@ def build_release_data(release: str):
     contracts_files = get_contract_files()
     project_type = detect_project_type()
 
-    if project_type == 'foundry':
-        compile_with_foundry()
         
     for contract_file in contracts_files:
         if project_type == 'foundry':
@@ -56,6 +57,35 @@ def build_release_data(release: str):
     print(f"Release data written to {RELEASE_DATA_FILE_PATH}")
 
 
+def get_ape_artifacts(contract_name):
+    """
+    Extracts the bytecode and ABI of the specified contract from Ape's artifacts.
+    :param contract_name: The name of the contract (e.g., "MyContract").
+    :return: A tuple containing the bytecode and ABI of the specified contract, or (None, None) if not found.
+    """
+    artifacts_dir = './.build'  # Ape's default output directory
+    contract_name = contract_name.replace(".sol", "").replace(".vy", "")
+    artifact_path = os.path.join(artifacts_dir, f"{contract_name}.json")
+
+    # Check if the artifact JSON file exists
+    if not os.path.exists(artifact_path):
+        print(f"Error: Artifact for {contract_name} not found at {artifact_path}.")
+        return None, None
+
+    # Load the artifact JSON to extract the bytecode and ABI
+    with open(artifact_path, 'r') as file:
+        artifact = json.load(file)
+        bytecode = artifact.get('bytecode')
+        abi = artifact.get('abi', [])
+
+    # Validate the extracted data
+    if bytecode and bytecode != '0x':
+        print(f"Bytecode for {contract_name}: {bytecode[:40]}...")  # Print a portion of the bytecode for brevity
+    else:
+        print(f"No valid bytecode found for {contract_name}.")
+        bytecode = None
+    
+    return bytecode, abi
 def detect_project_type():
     """
     Detects the project type by checking the presence of a 'foundry.toml' file.
@@ -127,50 +157,41 @@ def get_foundry_artifacts(contract_name):
     
     return bytecode, abi
 
-def get_ape_artifacts(contract_path):
-    """
-    Compiles a Solidity or Vyper contract depending on the file extension.
-    Returns the contract name, bytecode, and ABI.
-    """
-    contract_name = os.path.splitext(os.path.basename(contract_path))[0]
 
-    if contract_path.endswith('.sol'):
-        raise Exception("Solidity contracts are not supported with Ape")
-    elif contract_path.endswith('.vy'):
-        return compile_vyper_contract(contract_path, contract_name)
-    else:
-        return None, None
-
-
-def compile_with_foundry():
+def compile_solidity_contract(source_file):
     """
-    Compiles the contracts using Foundry's forge.
+    Compiles the given Solidity source file using solcx, auto-detecting the version.
+    :param source_file: Path to the Solidity source file.
+    :return: A tuple containing the ABI and bytecode of the compiled contract.
     """
-    print(f"Compiling Solidity contracts")
-    try:
-        # Run the `forge compile` command without capturing output
-        result = subprocess.run(['forge', 'compile'], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error during compilation: {e}")
-        return False
-    return True
+    # Read the Solidity source code
+    with open(source_file, 'r') as file:
+        source_code = file.read()
 
+    # Auto-detect the Solidity version from the source code using solcx helper
+    solc_version = get_solc_version_pragma(source_code)
+    print(f"Detected Solidity version: {solc_version}")
 
-def compile_vyper_contract(contract_path, contract_name):
-    """
-    Compiles a Vyper contract using the Vyper compiler.
-    Returns the contract name, bytecode, and ABI.
-    """
-    with open(contract_path, 'r') as f:
-        source_code = f.read()
+    # Install the detected version of solc if not already installed
+    install_solc(solc_version)
+    set_solc_version(solc_version)
 
-    try:
-        bytecode = vyper.compile_code(source_code, ['bytecode'])['bytecode']
-        abi = vyper.compile_code(source_code, ['abi'])['abi']
-        return bytecode, abi
-    except Exception as e:
-        print(f"Error compiling Vyper contract {contract_name}: {e}")
-        return None, None
+    # Compile the Solidity source code
+    compiled_sol = compile_source(
+        source_code,
+        output_values=['abi', 'bin'],  # Specify to get ABI and bytecode
+    )
+
+    # Extract contract data (assuming single contract per file)
+    contract_name = list(compiled_sol.keys())[0]
+    contract_interface = compiled_sol[contract_name]
+    
+    # Get the ABI and Bytecode
+    abi = contract_interface['abi']
+    bytecode = contract_interface['bin']
+
+    print("Compilation successful!")
+    return abi, bytecode
 
 # Load the YAML config file
 def load_config(config_file):

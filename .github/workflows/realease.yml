@@ -17,10 +17,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
+      - name: Check Ape or Foundry
+        id: check_ape
+        run: |
+          echo "is_ape=false" >> $GITHUB_ENV
+          if [ -f "ape-config.yaml" ]; then
+            echo "is_ape=true" >> $GITHUB_ENV
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -30,9 +33,29 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install vyper
           python -m pip install web3
+      
+      - name: Install Foundry
+        if: env.is_ape == 'false'
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
 
+      - name: Install Ape and plugins
+        if: env.is_ape == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          ape plugins install .
+
+      - name: Compile contracts
+        run: |
+          if [ "${{ env.is_ape }}" = "true" ]; then
+            ape compile --force --size
+          else
+            forge compile
+          fi
+          
       - name: Execute script and generate data
         run: python release.py ${{ github.event.inputs.tag_name || github.event.release.tag_name }}
 
