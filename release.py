@@ -2,9 +2,6 @@ import os
 import time
 import json
 from web3 import Web3
-import subprocess
-from solcx import compile_source, install_solc, set_solc_version, get_solc_version_pragma
-import vyper
 import re
 
 
@@ -34,7 +31,6 @@ def build_release_data(release: str):
     contracts_files = get_contract_files()
     project_type = detect_project_type()
 
-        
     for contract_file in contracts_files:
         if project_type == 'foundry':
             print(f"Processing Foundry contract: {contract_file}")
@@ -75,8 +71,10 @@ def get_ape_artifacts(contract_name):
     # Load the artifact JSON to extract the bytecode and ABI
     with open(artifact_path, 'r') as file:
         artifact = json.load(file)
-        bytecode = artifact.get('bytecode')
+        bytecode = artifact.get('deploymentBytecode', {}).get('bytecode', '')
         abi = artifact.get('abi', [])
+        print('abi', abi[0:100])
+        print('bytecode', bytecode[0:60])
 
     # Validate the extracted data
     if bytecode and bytecode != '0x':
@@ -86,6 +84,7 @@ def get_ape_artifacts(contract_name):
         bytecode = None
     
     return bytecode, abi
+
 def detect_project_type():
     """
     Detects the project type by checking the presence of a 'foundry.toml' file.
@@ -105,8 +104,8 @@ def get_contract_files():
     """
     root_directories = ['./contracts', './src']
     directories_to_exclude = [
-        'contracts/.cache', 'contracts/interfaces', 'contracts/test',
-        'src/.cache', 'src/interfaces', 'src/test'
+        'contracts/.cache', 'contracts/interfaces', 'contracts/test', 'contracts/Mocks',
+        'src/.cache', 'src/interfaces', 'src/test', 'src/mocks'
     ]
     contracts = []
 
@@ -158,40 +157,6 @@ def get_foundry_artifacts(contract_name):
     return bytecode, abi
 
 
-def compile_solidity_contract(source_file):
-    """
-    Compiles the given Solidity source file using solcx, auto-detecting the version.
-    :param source_file: Path to the Solidity source file.
-    :return: A tuple containing the ABI and bytecode of the compiled contract.
-    """
-    # Read the Solidity source code
-    with open(source_file, 'r') as file:
-        source_code = file.read()
-
-    # Auto-detect the Solidity version from the source code using solcx helper
-    solc_version = get_solc_version_pragma(source_code)
-    print(f"Detected Solidity version: {solc_version}")
-
-    # Install the detected version of solc if not already installed
-    install_solc(solc_version)
-    set_solc_version(solc_version)
-
-    # Compile the Solidity source code
-    compiled_sol = compile_source(
-        source_code,
-        output_values=['abi', 'bin'],  # Specify to get ABI and bytecode
-    )
-
-    # Extract contract data (assuming single contract per file)
-    contract_name = list(compiled_sol.keys())[0]
-    contract_interface = compiled_sol[contract_name]
-    
-    # Get the ABI and Bytecode
-    abi = contract_interface['abi']
-    bytecode = contract_interface['bin']
-
-    print("Compilation successful!")
-    return abi, bytecode
 
 # Load the YAML config file
 def load_config(config_file):
