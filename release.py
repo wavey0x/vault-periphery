@@ -1,8 +1,9 @@
 import os
 import time
 import json
-from web3 import Web3
 import re
+import sys
+from web3 import Web3
 
 
 # Initialize web3 (assuming you are connecting to a local node)
@@ -14,8 +15,7 @@ RELEASE_DATA_FILE_PATH = "./release/release_data.json"
 config_file = "release_config.yaml"
 
 
-def main():
-    release_name = "v3.0.3"
+def main(release_name):
     build_release_data(release_name)
 
 def build_release_data(release: str):
@@ -179,7 +179,10 @@ def save_to_file(file_path, data):
         print(f"File saved to {file_path}")
 
 
-
-
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        tag_name = sys.argv[1]
+        main(tag_name)
+    else:
+        print("Error: Please provide a tag name as an argument.")
+        sys.exit(1)
